@@ -67,6 +67,7 @@ impl Cs3700UnixNetwork {
         }
     }
 
+
     fn send_message_to(&mut self, to: u32, leader_id: Option<u32>, data: JsonMessageType) {
         let leader_name = leader_id.map(|id| num_to_network_name(id));
 
@@ -90,7 +91,7 @@ impl NetworkInterface<KvStateMachine> for Cs3700UnixNetwork {
     fn on_config_update(&mut self, _config: &Config) {}
 
     fn wait_for_message(&mut self, timeout: Duration, raft_message: &mut Vec<u8>) -> MessageEvent<<KvStateMachine as StateMachine>::Command, Self::ReadRequest> {
-        socket::setsockopt(self.socket_fd, ReceiveTimeout, &TimeVal::milliseconds(timeout.as_millis() as i64)).unwrap();
+        socket::setsockopt(self.socket_fd, ReceiveTimeout, &TimeVal::microseconds(timeout.as_micros() as i64)).unwrap();
 
         let amt = match socket::recv(self.socket_fd, &mut self.buffer, MsgFlags::empty()) {
             Ok(amt) if amt == 0 => return MessageEvent::Fail,

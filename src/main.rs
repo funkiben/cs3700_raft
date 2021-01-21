@@ -14,7 +14,6 @@ mod storage;
 mod state_machine;
 mod network;
 
-
 fn main() {
     let (our_id, nodes) = get_nodes_and_id();
 

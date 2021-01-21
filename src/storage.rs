@@ -93,18 +93,18 @@ impl<S: StateMachine + Clone> Storage<S> for RamStorage<S> {
     }
 
     fn add_new_snapshot_chunk(&mut self, offset: u32, data: &[u8]) {
-        let offset = offset as usize;
-        self.snapshot_chunk_bytes.resize_with(offset, || 0u8);
-        self.snapshot_chunk_bytes.splice(offset.., data.iter().map(|n| *n));
+        let start = offset as usize;
+        let end = start + data.len();
+        self.snapshot_chunk_bytes.resize_with(end, || 0u8);
+        self.snapshot_chunk_bytes.splice(start..end, data.iter().map(|n| *n));
     }
 
     fn try_use_chunks_as_new_snapshot(&mut self, last_index: u32, last_term: u32) -> Option<RaftStateMachine<S>> {
-        let bytes = BytesRef::new(&self.snapshot_chunk_bytes);
-        if let Some(snapshot) = RaftStateMachine::<S>::try_from_bytes(bytes) {
+        if let Some(snapshot) = RaftStateMachine::<S>::try_from_slice(&self.snapshot_chunk_bytes) {
             self.snapshot_bytes = std::mem::take(&mut self.snapshot_chunk_bytes);
-            self.snapshot_last_term = last_term;
             self.snapshot_last_index = last_index;
-            Some(snapshot);
+            self.snapshot_last_term = last_term;
+            return Some(snapshot);
         }
         None
     }
@@ -133,5 +133,79 @@ impl<S: StateMachine + Clone> Storage<S> for RamStorage<S> {
 
     fn current_term(&self) -> u32 {
         self.current_term
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use my_raft::bytes::WriteBytes;
+    use my_raft::config::Config;
+    use my_raft::state_machine::RaftStateMachine;
+    use my_raft::storage::Storage;
+
+    use crate::state_machine::KvStateMachine;
+    use crate::storage::RamStorage;
+
+    fn get_empty_storage() -> RamStorage<KvStateMachine> {
+        RamStorage::new(RaftStateMachine {
+            inner: KvStateMachine(HashMap::new()),
+            config: Config {
+                election_timeout_min: 0,
+                election_timeout_range: 0,
+                heartbeat_timeout: 0,
+                rpc_response_timeout: 0,
+                max_entries_in_append_entries: 0,
+                max_bytes_in_install_snapshot: 0,
+                next_index_decrease_rate: 0,
+                snapshot_min_log_size: 0,
+                id: 0,
+                nodes: Default::default(),
+            },
+            client_last_command_ids: Default::default(),
+        })
+    }
+
+    #[test]
+    fn snapshot_chunks() {
+        let mut sm = KvStateMachine(HashMap::new());
+        sm.0.insert("hello".to_string(), "goodbye".to_string());
+        sm.0.insert("blue".to_string(), "red".to_string());
+        sm.0.insert("hot".to_string(), "cold".to_string());
+
+        let sm = RaftStateMachine {
+            inner: sm,
+            config: Config {
+                election_timeout_min: 435,
+                election_timeout_range: 30,
+                heartbeat_timeout: 10,
+                rpc_response_timeout: 324,
+                max_entries_in_append_entries: 0,
+                max_bytes_in_install_snapshot: 0,
+                next_index_decrease_rate: 0,
+                snapshot_min_log_size: 12,
+                id: 0,
+                nodes: Default::default(),
+            },
+            client_last_command_ids: Default::default(),
+        };
+
+        let mut bytes = vec![];
+        sm.write_bytes(&mut bytes).unwrap();
+
+        let mut storage = get_empty_storage();
+
+        let chunk_size = 10;
+
+        for i in 0..((bytes.len() / chunk_size) + 1) {
+            let offset = i * chunk_size;
+            let amt = chunk_size.min(bytes.len() - offset);
+            storage.add_new_snapshot_chunk(offset as u32, &bytes[offset..(offset + amt)]);
+        }
+
+        assert_eq!(storage.snapshot_chunk_bytes, bytes);
+
+        storage.try_use_chunks_as_new_snapshot(5, 5).unwrap();
     }
 }
