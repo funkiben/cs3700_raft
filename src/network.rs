@@ -100,15 +100,7 @@ impl NetworkInterface<KvStateMachine> for Cs3700UnixNetwork {
             Err(_) => return MessageEvent::Fail
         };
 
-        // let message: JsonMessage = serde_json::from_slice(&self.buffer[..amt]).expect("Invalid JSON message");
-        let message: JsonMessage = match serde_json::from_slice(&self.buffer[..amt]) {
-            Ok(msg) => msg,
-            Err(e) => {
-                eprintln!("Failed to decode: {}", e);
-                eprintln!("{}", String::from_utf8_lossy(&self.buffer[..amt]));
-                panic!()
-            }
-        };
+        let message: JsonMessage = serde_json::from_slice(&self.buffer[..amt]).expect("Invalid JSON message");
 
         let src_id = network_name_to_num(message.src);
 
