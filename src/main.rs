@@ -27,7 +27,7 @@ fn main() {
             max_entries_in_append_entries: 100,
             max_bytes_in_install_snapshot: 100,
             next_index_decrease_rate: 100,
-            snapshot_min_log_size: 200,//u32::max_value(),
+            snapshot_min_log_size: u32::max_value(),
             id: our_id,
             nodes,
         },
