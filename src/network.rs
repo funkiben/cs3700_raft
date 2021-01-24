@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use my_raft::bytes::WriteBytes;
 use my_raft::config::Config;
-use my_raft::network::{ClientRequest, MessageEvent, NetworkInterface};
+use my_raft::network::{ClientCommandRequest, MessageEvent, NetworkInterface};
 use my_raft::state_machine::StateMachine;
 use nix::errno::Errno;
 use nix::sys::socket;
@@ -44,6 +44,7 @@ enum JsonMessageType<'a> {
 pub struct ReadValueRequest {
     key: String,
     mid: String,
+    client_id: u32,
 }
 
 
@@ -66,7 +67,6 @@ impl Cs3700UnixNetwork {
             buffer: [0u8; PACKET_SIZE],
         }
     }
-
 
     fn send_message_to(&mut self, to: u32, leader_id: Option<u32>, data: JsonMessageType) {
         let leader_name = leader_id.map(|id| num_to_network_name(id));
@@ -105,20 +105,14 @@ impl NetworkInterface<KvStateMachine> for Cs3700UnixNetwork {
         let src_id = network_name_to_num(message.src);
 
         match message.data {
-            JsonMessageType::Get { mid, key } => {
-                let request_id = hash(mid);
-                MessageEvent::ClientRead(ClientRequest {
-                    request_id,
-                    client_id: src_id,
-                    data: ReadValueRequest { key: key.to_string(), mid: mid.to_string() },
-                })
-            }
+            JsonMessageType::Get { mid, key } =>
+                MessageEvent::ClientRead(ReadValueRequest { key: key.to_string(), mid: mid.to_string(), client_id: src_id }),
             JsonMessageType::Put { mid, key, value } => {
                 let request_id = hash(mid);
-                MessageEvent::ClientCommand(ClientRequest {
+                MessageEvent::ClientCommand(ClientCommandRequest {
                     request_id,
                     client_id: src_id,
-                    data: SetValueCommand { key: key.to_string(), value: value.to_string(), mid: mid.to_string() },
+                    command: SetValueCommand { key: key.to_string(), value: value.to_string(), mid: mid.to_string() },
                 })
             }
             JsonMessageType::RaftOwned { data } => {
@@ -137,21 +131,20 @@ impl NetworkInterface<KvStateMachine> for Cs3700UnixNetwork {
         self.send_message_to(node, leader_id, JsonMessageType::RaftRef { data: &data[..amt] })
     }
 
-    fn handle_command_applied(&mut self, req: ClientRequest<&<KvStateMachine as StateMachine>::Command>, _state_machine: &KvStateMachine) {
-        self.send_message_to(req.client_id, Some(self.our_id), JsonMessageType::Ok { mid: &req.data.mid, value: None });
+    fn handle_command_applied(&mut self, req: ClientCommandRequest<&<KvStateMachine as StateMachine>::Command>, _state_machine: &KvStateMachine) {
+        self.send_message_to(req.client_id, Some(self.our_id), JsonMessageType::Ok { mid: &req.command.mid, value: None });
     }
 
-    fn handle_ready_to_read(&mut self, req: ClientRequest<Self::ReadRequest>, state_machine: &KvStateMachine) {
-        let value = Some(state_machine.0.get(&req.data.key).map(|s| s.as_str()).unwrap_or(""));
-        self.send_message_to(req.client_id, Some(self.our_id), JsonMessageType::Ok { mid: &req.data.mid, value });
+    fn handle_ready_to_read(&mut self, req: Self::ReadRequest, state_machine: &KvStateMachine) {
+        let value = Some(state_machine.0.get(&req.key).map(|s| s.as_str()).unwrap_or(""));
+        self.send_message_to(req.client_id, Some(self.our_id), JsonMessageType::Ok { mid: &req.mid, value });
     }
 
-    fn redirect_command_request(&mut self, leader_id: u32, req: ClientRequest<<KvStateMachine as StateMachine>::Command>) {
-        self.send_message_to(req.client_id, Some(leader_id), JsonMessageType::Redirect { mid: &req.data.mid });
+    fn redirect_command_request(&mut self, leader_id: u32, req: ClientCommandRequest<<KvStateMachine as StateMachine>::Command>) {
+        self.send_message_to(req.client_id, Some(leader_id), JsonMessageType::Redirect { mid: &req.command.mid });
     }
 
-    fn redirect_read_request(&mut self, leader_id: u32, req: ClientRequest<Self::ReadRequest>) {
-        self.send_message_to(req.client_id, Some(leader_id), JsonMessageType::Redirect { mid: &req.data.mid });
+    fn redirect_read_request(&mut self, leader_id: u32, req: Self::ReadRequest) {
+        self.send_message_to(req.client_id, Some(leader_id), JsonMessageType::Redirect { mid: &req.mid });
     }
 }
-
