@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io;
 use std::io::Write;
 
-use my_raft::bytes::{ReadBytes, TryFromBytes, WriteBytes};
+use my_raft::bytes::{BytesWriter, ReadBytes, TryFromBytes, WriteBytes};
 use my_raft::state_machine::{RaftStateMachine, StateMachine};
 
 pub struct SetValueCommand {
@@ -39,15 +39,15 @@ impl TryFromBytes for KvStateMachine {
 }
 
 impl WriteBytes for KvStateMachine {
-    fn write_bytes(&self, mut writer: impl Write) -> io::Result<usize> {
-        let mut amt = writer.write(&(self.0.len() as u32).to_be_bytes())?;
+    fn write_bytes<W: Write>(&self, writer: &mut BytesWriter<W>) -> io::Result<()> {
+        writer.write_u32(self.0.len() as u32)?;
         for (key, value) in &self.0 {
-            amt += writer.write(&(key.len() as u32).to_be_bytes())?;
-            amt += writer.write(key.as_bytes())?;
-            amt += writer.write(&(value.len() as u32).to_be_bytes())?;
-            amt += writer.write(value.as_bytes())?;
+            writer.write_u32(key.len() as u32)?;
+            writer.write(key.as_bytes())?;
+            writer.write_u32(value.len() as u32)?;
+            writer.write(value.as_bytes())?;
         }
-        Ok(amt)
+        Ok(())
     }
 }
 
@@ -64,14 +64,13 @@ impl TryFromBytes for SetValueCommand {
 }
 
 impl WriteBytes for SetValueCommand {
-    fn write_bytes(&self, mut writer: impl Write) -> io::Result<usize> {
-        let mut amt = writer.write(&(self.key.len() as u32).to_be_bytes())?;
-        amt += writer.write(self.key.as_bytes())?;
-        amt += writer.write(&(self.value.len() as u32).to_be_bytes())?;
-        amt += writer.write(self.value.as_bytes())?;
-        amt += writer.write(&(self.mid.len() as u32).to_be_bytes())?;
-        amt += writer.write(self.mid.as_bytes())?;
-        Ok(amt)
+    fn write_bytes<W: Write>(&self, writer: &mut BytesWriter<W>) -> io::Result<()> {
+        writer.write_u32(self.key.len() as u32)?;
+        writer.write(self.key.as_bytes())?;
+        writer.write_u32(self.value.len() as u32)?;
+        writer.write(self.value.as_bytes())?;
+        writer.write_u32(self.mid.len() as u32)?;
+        writer.write(self.mid.as_bytes())
     }
 }
 

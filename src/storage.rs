@@ -76,7 +76,7 @@ impl<S: StateMachine + Clone> Storage<S> for RamStorage<S> {
         self.snapshot_last_term = last_term;
 
         self.snapshot_bytes.clear();
-        snapshot.write_bytes(&mut self.snapshot_bytes).unwrap();
+        snapshot.write_bytes_with_writer(&mut self.snapshot_bytes).unwrap();
     }
 
     fn snapshot(&self) -> RaftStateMachine<S> {
@@ -192,7 +192,7 @@ mod tests {
         };
 
         let mut bytes = vec![];
-        sm.write_bytes(&mut bytes).unwrap();
+        sm.write_bytes_with_writer(&mut bytes).unwrap();
 
         let mut storage = get_empty_storage();
 

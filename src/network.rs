@@ -127,7 +127,7 @@ impl NetworkInterface<KvStateMachine> for Cs3700UnixNetwork {
 
     fn send_raft_message(&mut self, node: u32, leader_id: Option<u32>, msg: impl WriteBytes) {
         let mut data = [0u8; 4096];
-        let amt = msg.write_bytes(data.as_mut()).unwrap();
+        let amt = msg.write_bytes_with_writer(data.as_mut()).unwrap();
         self.send_message_to(node, leader_id, JsonMessageType::RaftRef { data: &data[..amt] })
     }
 
